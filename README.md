@@ -11,20 +11,6 @@
 
 ---
 
-### 🎥 Video Demonstration
-
-Watch our short video to see SignSpeak AI in action and understand its unique emotional recognition capabilities. See how it handles a real conversation, capturing not just the signs, but the feelings behind them.
-
-<div align="center">
-  <a href="https://www.youtube.com/watch?v=YOUR_VIDEO_ID_HERE" target="_blank">
-    <img src="https://img.youtube.com/vi/YOUR_VIDEO_ID_HERE/maxresdefault.jpg" alt="SignSpeak AI Video Demonstration" width="600" />
-  </a>
-</div>
-
-*(**Note**: Replace `YOUR_VIDEO_ID_HERE` in the URL and image source with the ID of your actual YouTube video.)*
-
----
-
 ## 🌟 Key Features
 
 * **Real-Time Two-Way Translation**: Translates sign language (ASL, BSL, etc.) to text/speech and text/speech back to a signing avatar.
