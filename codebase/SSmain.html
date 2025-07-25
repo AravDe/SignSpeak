@@ -1,0 +1,191 @@
+<div class="w-full max-w-2xl mx-auto">
+    <h1 class="text-3xl md:text-4xl font-bold text-center mb-2">SignSpeak</h1>
+    <p class="text-center text-gray-600 mb-6">Real-Time ASL Translation using your Webcam</p>
+
+    <!-- Status Box -->
+    <div id="status-container" class="status-box border-l-4 p-4 mb-4 rounded-md flex items-center">
+        <div id="loading-spinner" class="loading-spinner animate-spin rounded-full h-5 w-5 border-b-2 mr-3"></div>
+        <p id="status-text">Initializing models and camera...</p>
+    </div>
+
+    <!-- Video and Canvas Container -->
+    <div class="video-container shadow-lg rounded-lg">
+        <video id="webcam" autoplay playsinline class="w-full h-auto"></video>
+        <canvas id="output_canvas" width="640" height="480"></canvas>
+        <div id="caption-box" class="caption-box">...</div>
+    </div>
+
+    <div class="mt-4 text-center text-sm text-gray-500">
+         <p>Note: This is a demo. Accuracy may vary. Ensure good lighting.</p>
+    </div>
+</div>
+
+<!-- MediaPipe and TensorFlow.js Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script type="module">
+    // Get references to HTML elements
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const captionBox = document.getElementById('caption-box');
+    const statusText = document.getElementById('status-text');
+    const statusContainer = document.getElementById('status-container');
+    const loadingSpinner = document.getElementById('loading-spinner');
+
+    // --- Configuration ---
+    const MAX_FRAMES = 30; // Number of frames to feed to the model
+    const PREDICTION_THRESHOLD = 0.6; // Minimum confidence to show a prediction
+
+    let model, holistic;
+    let landmarksBuffer = []; // This will store landmarks for MAX_FRAMES
+    let lastPrediction = "";
+    let predictionTimeout;
+
+    // --- Define the ASL signs the model knows ---
+    // This MUST match the order the model was trained on.
+    const SIGNS = ['hello', 'thanks', 'iloveyou', 'yes', 'no', 'please', 'sorry'];
+
+    // --- Main Function ---
+    async function main() {
+        try {
+            // 1. Initialize MediaPipe Holistic
+            statusText.textContent = 'Loading MediaPipe Holistic model...';
+            holistic = new Holistic({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
+            });
+            holistic.setOptions({
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5,
+                modelComplexity: 1, // 0=light, 1=full, 2=heavy
+            });
+            holistic.onResults(onResults);
+
+            // 2. Load the pre-trained TensorFlow.js model
+            statusText.textContent = 'Loading ASL prediction model...';
+            // NOTE: The model path needs to be a publicly accessible URL or a local path if running on a local server.
+            // For this demo, we use a mock model. Replace the `createMockModel` call with a real `tf.loadGraphModel` call.
+            // model = await tf.loadGraphModel('path/to/your/model.json');
+            model = createMockModel(); // Using a mock model for this demo
+
+            // 3. Setup and start the webcam
+            statusText.textContent = 'Accessing webcam...';
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await holistic.send({ image: videoElement });
+                },
+                width: 640,
+                height: 480
+            });
+            camera.start();
+
+            // Update status to show everything is ready
+            statusContainer.classList.remove('status-box');
+            statusContainer.classList.add('bg-green-100', 'text-green-800', 'border-green-400');
+            loadingSpinner.style.display = 'none';
+            statusText.textContent = 'System Ready. Start signing!';
+
+        } catch (error) {
+            console.error(error);
+            statusContainer.classList.remove('status-box');
+            statusContainer.classList.add('bg-red-100', 'text-red-800', 'border-red-400');
+            loadingSpinner.style.display = 'none';
+            statusText.textContent = 'Error initializing. Please check console and refresh.';
+        }
+    }
+
+    // --- Callback for MediaPipe Results ---
+    function onResults(results) {
+        // Draw the landmarks on the canvas
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+        // Draw face, pose, and hand landmarks
+        drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION, { color: '#C0C0C070', lineWidth: 1 });
+        drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
+        drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: '#CC0000', lineWidth: 2 });
+        drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: '#00CC00', lineWidth: 2 });
+
+        canvasCtx.restore();
+
+        // --- Landmark Processing and Prediction ---
+        processLandmarks(results);
+    }
+
+    // --- Process Landmarks and Make Predictions ---
+    function processLandmarks(results) {
+        // Extract landmarks. If not detected, use an array of zeros.
+        const pose = results.poseLandmarks ? results.poseLandmarks.map(res => [res.x, res.y, res.z, res.visibility]).flat() : new Array(33 * 4).fill(0);
+        const face = results.faceLandmarks ? results.faceLandmarks.map(res => [res.x, res.y, res.z]).flat() : new Array(468 * 3).fill(0);
+        const lh = results.leftHandLandmarks ? results.leftHandLandmarks.map(res => [res.x, res.y, res.z]).flat() : new Array(21 * 3).fill(0);
+        const rh = results.rightHandLandmarks ? results.rightHandLandmarks.map(res => [res.x, res.y, res.z]).flat() : new Array(21 * 3).fill(0);
+
+        const allLandmarks = [...pose, ...face, ...lh, ...rh];
+
+        // Add the current frame's landmarks to our buffer
+        landmarksBuffer.push(allLandmarks);
+
+        // If buffer is full, make a prediction
+        if (landmarksBuffer.length === MAX_FRAMES) {
+            const tensor = tf.tensor2d(landmarksBuffer);
+            const expandedTensor = tensor.expandDims(0); // Add batch dimension
+
+            // Use the model to predict
+            const prediction = model.predict(expandedTensor);
+            const predictionData = prediction.dataSync();
+
+            tf.dispose([tensor, expandedTensor, prediction]); // Clean up memory
+
+            // Get the most likely prediction
+            const maxProb = Math.max(...predictionData);
+            const maxIndex = predictionData.indexOf(maxProb);
+
+            if (maxProb > PREDICTION_THRESHOLD) {
+                const predictedSign = SIGNS[maxIndex];
+                if (predictedSign !== lastPrediction) {
+                   captionBox.textContent = predictedSign.toUpperCase();
+                   lastPrediction = predictedSign;
+
+                   // Set a timeout to clear the caption
+                   clearTimeout(predictionTimeout);
+                   predictionTimeout = setTimeout(() => {
+                        captionBox.textContent = '...';
+                        lastPrediction = '';
+                   }, 2000); // Clear after 2 seconds
+                }
+            }
+
+            // Remove the oldest frame from the buffer to keep it at MAX_FRAMES
+            landmarksBuffer.shift();
+        }
+    }
+
+    // --- MOCK MODEL FOR DEMO ---
+    // This function creates a fake TensorFlow.js model for demonstration purposes.
+    // It randomly predicts one of the known signs.
+    // **REPLACE THIS with `tf.loadGraphModel` in a real application.**
+    function createMockModel() {
+        console.warn("Using a mock model. Predictions will be random.");
+        const model = {
+            predict: (tensor) => {
+                // We need to return a tensor with the correct shape
+                return tf.tidy(() => {
+                    // Create a random prediction output
+                    const randomPredictions = new Array(SIGNS.length).fill(0).map(() => Math.random());
+                    const sum = randomPredictions.reduce((a, b) => a + b, 0);
+                    const normalizedPredictions = randomPredictions.map(p => p / sum); // Softmax-like
+                    return tf.tensor1d(normalizedPredictions).expandDims(0);
+                });
+            }
+        };
+        return model;
+    }
+
+
+    // --- Start the application ---
+    main();
+
+</script>
