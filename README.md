@@ -13,7 +13,7 @@
 
 ## 🌟 Key Features
 
-* **Real-Time Two-Way Translation**: Translates sign language (ASL, BSL, etc.) to text/speech and text/speech back to a signing avatar.
+* **Real-Time Translation**: Translates sign language (ASL, BSL, etc.) to text/speech.
 * **Emotion Recognition**: Utilizes facial expression analysis and body language cues to detect the user's emotional state (e.g., happy, sad, urgent, questioning).
 * **Emotionally-Aware Synthesis**:
     * When translating *from* sign language, the output text is annotated with the detected emotion (e.g., *"I need help (urgent)"*).
