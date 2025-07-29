@@ -70,4 +70,3 @@ To get a local copy up and running, follow these simple steps.
     cd ../frontend
     npm install
     ```
-4.  **Configure Environment Variables**
